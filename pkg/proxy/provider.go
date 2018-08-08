@@ -8,6 +8,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 )
 
 func Run() {
@@ -26,6 +27,7 @@ type Proxies struct {
 	MinikubeIP string
 	mutex      sync.Mutex
 	dns        *DNSNameserver
+	tcpproxyReady bool
 }
 
 func New(minikubeIP string) *Proxies {
@@ -44,15 +46,17 @@ func (p *Proxies) RunDNS() {
 
 // Using map[string]bool to implement set[string] because this is go
 func (p *Proxies) ReconfigureProxies(servicesByNamespace map[string]map[string]v1.Service) error {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
 	if p.Proxy != nil {
 		// TODO find a proxy that will allow me to change rules at runtime or modify google's tcpproxy to allow that
 		err := p.Close()
+		p.tcpproxyReady = false
 		if err != nil {
 			panic(err)
 		}
 	}
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
 	p.Proxy = &tcpproxy.Proxy{}
 
 	for namespace, serviceList := range servicesByNamespace {
@@ -63,14 +67,15 @@ func (p *Proxies) ReconfigureProxies(servicesByNamespace map[string]map[string]v
 			}
 			for _, port := range svc.Spec.Ports {
 				if port.NodePort == 0 {
+					// Skip things without a node port because we can't direct traffic to them
 					continue
 				}
 				clusterHostname := fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, namespace)
 				target := tcpproxy.To(fmt.Sprintf("%s:%d", p.MinikubeIP, port.NodePort))
 
 
-				ipPort := fmt.Sprintf("0.0.0.0:%d", port.Port)
-				//ipPort := fmt.Sprintf(":%d", port.Port)
+				//ipPort := fmt.Sprintf("0.0.0.0:%d", port.Port)
+				ipPort := fmt.Sprintf(":%d", port.Port)
 				log.Printf("Routing %s:%s to %s", clusterHostname, ipPort, target.Addr)
 
 				p.AddSNIRoute(ipPort, clusterHostname, target)
@@ -87,14 +92,31 @@ func (p *Proxies) ReconfigureProxies(servicesByNamespace map[string]map[string]v
 		}
 	}
 
-	// TODO: what if run fails?
-	go func(){
-		log.Printf("Run...")
-		log.Print(p.Run())
-		log.Printf("End...")
-	}()
+	p.tcpproxyReady = true
 	log.Printf("Done providing")
 	return nil
+}
+func (p *Proxies) RunTCPProxy() {
+	// TODO: take a stop ch
+	go func(){
+
+		for {
+			if !p.tcpproxyReady {
+				time.Sleep(time.Millisecond * 1)
+				continue
+			}
+			func (){
+				p.mutex.Lock()
+				defer p.mutex.Unlock()
+				log.Printf("Restarting tcpproxy...")
+				err := p.Run()
+				log.Printf("Error running tcp proxy: %v", err)
+				err = p.Proxy.Close()
+				log.Printf("Error closing tcp proxy: %v", err)
+			}()
+		}
+		log.Printf("End...")
+	}()
 }
 
 // equals is a trivial Matcher that implements string equality.

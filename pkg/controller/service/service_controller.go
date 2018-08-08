@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	"strings"
 	"github.com/subchen/go-log"
+	"reflect"
 )
 
 /**
@@ -35,6 +36,7 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 	minikubeIp := getMinikubeIp()
 	proxies := proxy.New(minikubeIp)
 	proxies.RunDNS()
+	proxies.RunTCPProxy()
 	return &ReconcileService{
 		Client:                   mgr.GetClient(),
 		scheme:                   mgr.GetScheme(),
@@ -151,6 +153,9 @@ func areServicesTheSame(a, b map[string]corev1.Service) bool {
 			return false
 		} else {
 			if va.Annotations["wildcards.kportal.io"] != vb.Annotations["wildcards.kportal.io"] {
+				return false
+			}
+			if !reflect.DeepEqual(va.Spec.Ports, vb.Spec.Ports) {
 				return false
 			}
 		}

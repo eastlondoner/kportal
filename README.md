@@ -63,6 +63,8 @@ Run kPortal
 ```
 # You don't need sudo if none of your services are listening on ports <1000
 sudo KUBECONFIG="${HOME}/.kube/config" go run ./cmd/manager/main.go
+or
+sudo KUBECONFIG="/tmp/minikubeconf" go run ./cmd/manager/main.go
 ```
 
 At this point you should find that all your internets are working fine because kPortal delegates to cloudflare DNS for addresses it doesn't know about.
