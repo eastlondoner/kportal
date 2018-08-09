@@ -70,14 +70,16 @@ func GetConfig() (*rest.Config, error) {
 		return c, nil
 	}
 	// If no in-cluster config, try the default location in the user's home directory
+	path := "none"
 	if usr, err := user.Current(); err == nil {
+		path = filepath.Join(usr.HomeDir, ".kube", "config")
 		if c, err := clientcmd.BuildConfigFromFlags(
 			"", filepath.Join(usr.HomeDir, ".kube", "config")); err == nil {
 			return c, nil
 		}
 	}
 
-	return nil, fmt.Errorf("could not locate a kubeconfig")
+	return nil, fmt.Errorf("could not locate a kubeconfig: %s", path)
 }
 
 // GetConfigOrDie creates a *rest.Config for talking to a Kubernetes apiserver.

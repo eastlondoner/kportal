@@ -1,3 +1,6 @@
+SHELL := bash
+.ONESHELL:
+.SHELLFLAGS := -eu -o pipefail -c
 
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
@@ -50,3 +53,23 @@ docker-build: test
 # Push the docker image
 docker-push:
 	docker push ${IMG}
+
+# Run in a docker image
+kubeconfig = "/root/.kube/config"
+docker-run: docker-build
+	# By running kportal as a docker daemon on a bridge network, we get a dedicated routable IP;
+	# that means we can expose a DNS server at port 53, which is required if we want to configure resolv.conf
+	# to go to it (no way to override the port). It also means we don't need root to expose other ports we
+	# proxy.
+	docker run \
+	  --name neo4j-cloud-dns \
+	  -d \
+	  -e MINIKUBE_IP="$$(minikube ip)" \
+	  -v "${HOME}/.minikube":"${HOME}/.minikube":ro \
+	  -v "${HOME}/.kube/config":"$(kubeconfig)":ro -e KUBECONFIG="$(kubeconfig)" \
+	  ${IMG}
+
+	# Find the IP kportal got assigned
+	ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' neo4j-cloud-dns)"
+	# And tell the host system it should do DNS via that IP
+	bin/configure-kportal-as-dns "${ip}"

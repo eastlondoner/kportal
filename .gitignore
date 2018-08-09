@@ -6,6 +6,9 @@
 *.so
 *.dylib
 
+# Build output files
+out/
+
 # Test binary, build with `go test -c`
 *.test
 

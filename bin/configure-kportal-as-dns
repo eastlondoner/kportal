@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+set -o pipefail -o errtrace -o errexit -o nounset
+shopt -s inherit_errexit
+
+[[ -n "${TRACE:-}" ]] && set -o xtrace
+
+declare errmsg="ERROR (${0##*/})":
+trap 'echo >&2 $errmsg trap on error \(rc=${PIPESTATUS[@]}\) near line $LINENO' ERR
+
+usage() {
+  echo "configure-kportal-as-dns <KPORTAL_IP>
+
+  Sets up the system this is run on to point *.cluster.local DNS-lookups
+  to kportal.
+"
+}
+
+readonly DOMAINS=(cluster.local neo4j.io)
+
+main() {
+  if [[ "$@" == "" ]]; then
+    usage
+    exit 1
+  fi
+
+  local kportal_ip="$1"
+
+
+  if is_network_manager_system; then
+    install_on_network_manager_system "$kportal_ip"
+  fi
+}
+
+# Does the system quack like one that's running dmasq under Ubuntu's Network Manager?
+is_network_manager_system() {
+  [ -d /etc/NetworkManager/dnsmasq.d ]
+}
+
+install_on_network_manager_system() {
+  local ip="$1"
+  local config="/etc/NetworkManager/dnsmasq.d/kportal.conf"
+
+  local content=""
+  for domain in $DOMAINS; do
+    content="${content}server=/${domain}/${ip}
+"
+  done
+
+  local current="$(<"${config}")
+" # don't ask
+
+  if [[ "${current}" != "${content}" ]]; then
+    echo "${content}" | sudo tee "${config}" > /dev/null
+    sudo service network-manager restart
+  fi
+}
+
+main "$@"

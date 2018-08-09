@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"github.com/eastlondoner/kportal/pkg/proxy"
+	"github.com/subchen/go-log"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"os"
 	"os/exec"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -15,7 +17,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	"strings"
-	"github.com/subchen/go-log"
 )
 
 /**
@@ -27,23 +28,25 @@ import (
 // and Start it when the Manager is Started.
 // USER ACTION REQUIRED: update cmd/manager/main.go to call this core.Add(mgr) to install this Controller
 func Add(mgr manager.Manager) error {
-	return add(mgr, newReconciler(mgr))
+	return add(mgr, newReconciler(mgr, 53))
 }
 
 // newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager) reconcile.Reconciler {
-	minikubeIp := getMinikubeIp()
-	proxies := proxy.New(minikubeIp)
+func newReconciler(mgr manager.Manager, dnsBindPort int) reconcile.Reconciler {
+	proxies := proxy.New(getMinikubeIp(), getProxyIP(), dnsBindPort)
 	proxies.RunDNS()
 	return &ReconcileService{
-		Client:                   mgr.GetClient(),
-		scheme:                   mgr.GetScheme(),
-		proxy:                    proxies,
+		Client: mgr.GetClient(),
+		scheme: mgr.GetScheme(),
+		proxy:  proxies,
 		knownServicesByNamespace: make(map[string]map[string]corev1.Service, 0),
 	}
 }
 
 func getMinikubeIp() string {
+	if ip := os.Getenv("MINIKUBE_IP"); ip != "" {
+		return ip
+	}
 	cmd := exec.Command("minikube", "ip")
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -52,7 +55,26 @@ func getMinikubeIp() string {
 	}
 	result := out.String()
 	return strings.TrimSpace(result)
+}
 
+// Determine which IP we want to ask people to connect to to get proxied to the service they've looked up
+func getProxyIP() string {
+	if ip := os.Getenv("PROXY_IP"); ip != "" {
+		return ip
+	}
+
+	// hostname -i returns the bridge-network ip for the container it runs in
+	// so, if we are currently in a docker container and it's on a bridge network, this
+	// gives the ip that others that have access to the bridge network can use to reach us.
+	// If we are on the host, it'll generally return 127.0.0.1
+	cmd := exec.Command("hostname", "-i")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		panic(err)
+	}
+	result := out.String()
+	return strings.TrimSpace(result)
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler

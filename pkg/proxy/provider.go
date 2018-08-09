@@ -24,17 +24,19 @@ func Run() {
 type Proxies struct {
 	*tcpproxy.Proxy
 	MinikubeIP string
+	ProxyIP    string
 	mutex      sync.Mutex
 	dns        *DNSNameserver
 }
 
-func New(minikubeIP string) *Proxies {
+func New(minikubeIP, proxyIP string, dnsBindPort int) *Proxies {
 	// TODO add a signalhandler to close the tcpProxy
 	return &Proxies{
 		Proxy:      nil,
 		MinikubeIP: minikubeIP,
+		ProxyIP:    proxyIP,
 		mutex:      sync.Mutex{},
-		dns:        NewNameserver(minikubeIP),
+		dns:        NewNameserver(minikubeIP, dnsBindPort),
 	}
 }
 
@@ -68,19 +70,18 @@ func (p *Proxies) ReconfigureProxies(servicesByNamespace map[string]map[string]v
 				clusterHostname := fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, namespace)
 				target := tcpproxy.To(fmt.Sprintf("%s:%d", p.MinikubeIP, port.NodePort))
 
-
 				ipPort := fmt.Sprintf("0.0.0.0:%d", port.Port)
 				//ipPort := fmt.Sprintf(":%d", port.Port)
 				log.Printf("Routing %s:%s to %s", clusterHostname, ipPort, target.Addr)
 
 				p.AddSNIRoute(ipPort, clusterHostname, target)
-				p.dns.AddHost(clusterHostname, "127.0.0.1")
-				p.dns.AddHost(clusterHostname, "::1")
+				p.dns.AddHost(clusterHostname, p.ProxyIP)
+				p.dns.AddHost(clusterHostname, "::1") // TODO don't know how to do hostname -i for ipv6
 
 				for _, wildcard := range wildcards {
 					log.Printf("Routing %s:%s to %s", wildcard, ipPort, target.Addr)
 					p.AddSNIMatchRoute(ipPort, hasSuffix(strings.Replace(wildcard, "*", "", 1)), target)
-					p.dns.AddHost(wildcard, "127.0.0.1")
+					p.dns.AddHost(wildcard, p.ProxyIP)
 					p.dns.AddHost(wildcard, "::1")
 				}
 			}
@@ -88,7 +89,7 @@ func (p *Proxies) ReconfigureProxies(servicesByNamespace map[string]map[string]v
 	}
 
 	// TODO: what if run fails?
-	go func(){
+	go func() {
 		log.Printf("Run...")
 		log.Print(p.Run())
 		log.Printf("End...")

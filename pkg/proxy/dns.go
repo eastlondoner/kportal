@@ -12,7 +12,7 @@ type DNSNameserver struct {
 	handler dns.Handler
 }
 
-func NewNameserver(myIP string) *DNSNameserver {
+func NewNameserver(myIP string, bindPort int) *DNSNameserver {
 
 	myDomains := new(gdns.Hostitem)
 
@@ -25,16 +25,16 @@ func NewNameserver(myIP string) *DNSNameserver {
 		Listen: []gdns.Addr{
 			gdns.Addr{
 				Host:    "0.0.0.0",
-				Port:    1053,
+				Port:    bindPort,
 				Network: "udp",
 			},
 			gdns.Addr{
 				Host:    "0.0.0.0",
-				Port:    1053,
+				Port:    bindPort,
 				Network: "tcp",
 			},
 		},
-		ForwardRules:[]gdns.Rule{},
+		ForwardRules: []gdns.Rule{},
 		DefaultUpstream: []gdns.Addr{
 			gdns.Addr{
 				Host:    "1.1.1.1",
@@ -47,8 +47,8 @@ func NewNameserver(myIP string) *DNSNameserver {
 				Network: "tcp",
 			},
 		},
-		Hosts: myDomains,
-		Timeout:30,
+		Hosts:   myDomains,
+		Timeout: 30,
 	}
 
 	h := gdns.NewDNSHandler(&config)
